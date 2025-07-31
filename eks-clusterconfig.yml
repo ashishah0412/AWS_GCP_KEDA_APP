@@ -4,7 +4,7 @@ kind: ClusterConfig
 
 metadata:
   name: hello-keda-cluster
-  region: us-east-2 # <--- REPLACE WITH YOUR AWS_REGION
+  region: us-east-1 # <--- REPLACE WITH YOUR AWS_REGION
   version: "1.29" # Specify your desired Kubernetes version
 
 fargateProfiles:

@@ -14,6 +14,7 @@ This project demonstrates a Python application that processes messages from **mu
 * **IAM Roles for Service Accounts (IRSA):** Provides fine-grained AWS permissions to Kubernetes Service Accounts.
 
 ## Folder Structure
+```
 eks-keda-multi-pubsub-subscriber/
 ├── app/
 │   ├── app.py                     # Generic Python Flask application (Pub/Sub subscriber)
@@ -30,6 +31,7 @@ eks-keda-multi-pubsub-subscriber/
 ├── Dockerfile                     # Dockerfile for the Python application
 ├── deploy-pipeline.sh             # Main deployment script
 └── README.md                      # This README file
+```
 
 ## Prerequisites
 
