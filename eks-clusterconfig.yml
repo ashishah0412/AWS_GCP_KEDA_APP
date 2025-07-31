@@ -1,0 +1,19 @@
+# eks-clusterconfig.yml
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: hello-keda-cluster
+  region: us-east-2 # <--- REPLACE WITH YOUR AWS_REGION
+  version: "1.29" # Specify your desired Kubernetes version
+
+fargateProfiles:
+  - name: app-fargate-profile # All app pods (from different topics) will use this
+    selectors:
+      - namespace: hello-keda-app
+  - name: keda-fargate-profile
+    selectors:
+      - namespace: keda
+  - name: external-secrets-fargate-profile
+    selectors:
+      - namespace: external-secrets

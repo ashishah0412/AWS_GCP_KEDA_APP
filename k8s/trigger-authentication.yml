@@ -1,0 +1,11 @@
+# k8s/trigger-authentication.yml
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: keda-gcp-trigger-auth
+  namespace: hello-keda-app # Must be in the same namespace as your ScaledObjects and app
+spec:
+  secretTargetRef:
+    - parameter: GoogleApplicationCredentials
+      name: gcp-pubsub-credentials-k8s       # Name of the Kubernetes Secret created by External Secrets
+      key: key.json                          # Key within the Secret that holds the JSON key file content

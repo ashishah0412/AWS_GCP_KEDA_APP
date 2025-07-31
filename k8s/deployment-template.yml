@@ -1,0 +1,68 @@
+# k8s/deployment-template.yml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-keda-app-{{TOPIC_IDENTIFIER}}-deployment # Dynamic name per topic
+  namespace: hello-keda-app
+  labels:
+    app: hello-keda-app
+    topic: {{TOPIC_IDENTIFIER}} # Label to identify the specific topic processor
+spec:
+  replicas: 0 # Start with 0 replicas, KEDA will scale from zero
+  selector:
+    matchLabels:
+      app: hello-keda-app
+      topic: {{TOPIC_IDENTIFIER}} # Selector must match pod labels
+  template:
+    metadata:
+      labels:
+        app: hello-keda-app
+        topic: {{TOPIC_IDENTIFIER}} # Propagate label to pod
+    spec:
+      serviceAccountName: keda-app-sa # Shared Service Account for IRSA
+      tolerations:
+        - key: "eks.amazonaws.com/compute-type"
+          operator: "Equal"
+          value: "fargate"
+          effect: "NoSchedule"
+      containers:
+        - name: hello-keda-app-container
+          image: <YOUR_AWS_ACCOUNT_ID>.dkr.ecr.<YOUR_AWS_REGION>.amazonaws.com/hello-keda-app:latest # Will be replaced by script
+          ports:
+            - containerPort: 80
+          env:
+            - name: GCP_PROJECT_ID
+              value: "your-gcp-project-id" # <--- REPLACE WITH YOUR GCP PROJECT ID
+            - name: PUBSUB_SUBSCRIPTION_ID # <--- THIS IS THE KEY for topic identification
+              value: "{{PUBSUB_SUBSCRIPTION_ID_VALUE}}" # Placeholder, replaced by script
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: "/var/secrets/gcp/key.json" # Path where the GCP credentials JSON file will be mounted
+            - name: PROCESSING_DELAY_SECONDS # Simulate processing time per message
+              value: "0.5" # Adjust as needed for scaling behavior
+          volumeMounts:
+            - name: gcp-sa-key-volume
+              mountPath: "/var/secrets/gcp"
+              readOnly: true
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: gcp-sa-key-volume
+          secret:
+            secretName: gcp-pubsub-credentials-k8s # Name of the K8s Secret created by External Secrets

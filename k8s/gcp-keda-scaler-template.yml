@@ -1,0 +1,23 @@
+# k8s/gcp-keda-scaler-template.yml
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: hello-keda-pubsub-scaler-{{TOPIC_IDENTIFIER}} # Dynamic name per topic
+  namespace: hello-keda-app
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: hello-keda-app-{{TOPIC_IDENTIFIER}}-deployment # Refers to the specific Deployment
+  pollingInterval: 30 # How often KEDA checks for metrics (seconds)
+  cooldownPeriod: 300 # How long to wait before scaling down after activity subsides (seconds)
+  minReplicaCount: 0  # Scale down to zero when no messages
+  maxReplicaCount: 10 # Maximum number of replicas for this specific topic processor
+  triggers:
+    - type: gcp-pubsub
+      authenticationRef:
+        name: keda-gcp-trigger-auth # Reference to the shared TriggerAuthentication
+      metadata:
+        projectID: "your-gcp-project-id" # <--- REPLACE WITH YOUR GCP PROJECT ID
+        subscriptionID: "{{PUBSUB_SUBSCRIPTION_ID_VALUE}}" # <--- Specific subscription for this scaler
+        value: "5" # Target number of messages in the subscription backlog per pod

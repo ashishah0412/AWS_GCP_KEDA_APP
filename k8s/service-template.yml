@@ -1,0 +1,15 @@
+# k8s/service-template.yml
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-keda-app-{{TOPIC_IDENTIFIER}}-service # Dynamic name per topic
+  namespace: hello-keda-app
+spec:
+  selector:
+    app: hello-keda-app
+    topic: {{TOPIC_IDENTIFIER}} # Match the dynamic label
+  ports:
+    - protocol: TCP
+      port: 80       # Service port
+      targetPort: 80 # Container port
+  type: ClusterIP # Internal to the cluster.
