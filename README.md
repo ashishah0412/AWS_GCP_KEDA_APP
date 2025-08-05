@@ -135,7 +135,7 @@ This guide assumes you are starting with brand new AWS and GCP accounts.
 2.  **Create EKS Cluster with Fargate Profiles:**
     * Ensure `eksctl` is installed.
     * **Open `eks-clusterconfig.yml`:**
-        * Replace `us-east-2` with your desired `AWS_REGION`.
+        * Replace `us-east-1` with your desired `AWS_REGION`.
     * Create the EKS Cluster:
         ```bash
         eksctl create cluster -f eks-clusterconfig.yml
@@ -241,7 +241,7 @@ This guide assumes you are starting with brand new AWS and GCP accounts.
     * Click "Next".
     * Secret name: `gcp-pubsub-credentials`
     * Click "Next" and "Store".
-    * **MAKE A NOTE OF THE ARN FOR `gcp-pubsub-credentials`** (e.g., `arn:aws:secretsmanager:us-east-2:123456789012:secret:gcp-pubsub-credentials-XXXXXX`). This is for your reference, and is covered by the IAM policies.
+    * **MAKE A NOTE OF THE ARN FOR `gcp-pubsub-credentials`** (e.g., `arn:aws:secretsmanager:us-east-1:123456789012:secret:gcp-pubsub-credentials-XXXXXX`). This is for your reference, and is covered by the IAM policies.
 
 ### C. Update Project Files with Your Specific IDs
 
@@ -252,7 +252,7 @@ Now that you have your IDs and ARNs, update the placeholders in the project file
     * Replace `<YOUR_AWS_ACCOUNT_ID>` and `<YOUR_IAM_ROLE_NAME_FOR_EXTERNAL_SECRETS_SA>` with the ARN of `EKS-ExternalSecrets-Reader-Role`.
 
 2.  **Open `k8s/external-secret.yml`:**
-    * Replace `us-east-2` with your `AWS_REGION`.
+    * Replace `us-east-1` with your `AWS_REGION`.
 
 3.  **Open `k8s/deployment-template.yml`:**
     * Replace `your-gcp-project-id` with your GCP Project ID (e.g., `keda-pubsub-eks-project-12345`).
@@ -262,7 +262,7 @@ Now that you have your IDs and ARNs, update the placeholders in the project file
     * Replace `your-gcp-project-id` with your GCP Project ID.
 
 5.  **Open `deploy-pipeline.sh`:**
-    * Replace `us-east-2` with your `AWS_REGION`.
+    * Replace `us-east-1` with your `AWS_REGION`.
     * Replace `your-gcp-project-id` with your GCP Project ID.
     * **Verify the `TOPIC_CONFIGS` map** matches the topic identifiers and subscription IDs you created in GCP:
         ```bash

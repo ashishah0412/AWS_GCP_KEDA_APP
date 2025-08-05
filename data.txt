@@ -1,0 +1,47 @@
+
+EKS-KedaApp-SecretsReader-Role: arn:aws:iam::261358761679:role/EKS-KedaApp-SecretsReader-Role
+EKS-ExternalSecrets-Reader-Role: arn:aws:iam::261358761679:role/EKS-ExternalSecrets-Reader-Role
+
+
+# Create Namespace
+kubectl create namespace hello-keda-app
+kubectl create namespace keda
+kubectl create namespace external-secrets
+
+# Create Service Account Resource in the EKS Cluster
+kubectl apply -f k8s/iam-role-service-account.yml
+
+# Validate that service Account got created
+kubectl get sa -n hello-keda-app
+kubectl get sa -n external-secrets
+
+# Link the cluster service account resource with the role
+
+# Get your EKS cluster name from eks-clusterconfig.yml or by running `eksctl get clusters`
+export EKS_CLUSTER_NAME="hello-keda-cluster" # Or whatever you named it
+
+# Command to attach IAM OIDC provider with the cluster
+eksctl utils associate-iam-oidc-provider --region=us-east-1 --cluster=hello-keda-cluster --approve
+
+# For the KEDA application's Service Account
+eksctl create iamserviceaccount \
+--name keda-app-sa \
+--namespace hello-keda-app \
+--cluster hello-keda-cluster \
+--attach-role-arn arn:aws:iam::261358761679:role/EKS-KedaApp-SecretsReader-Role \
+--override-existing-serviceaccounts \
+--approve
+
+# For the External Secrets Operator's Service Account
+eksctl create iamserviceaccount \
+--name external-secrets-sa \
+--namespace external-secrets \
+--cluster hello-keda-cluster \
+--attach-role-arn arn:aws:iam::261358761679:role/EKS-ExternalSecrets-Reader-Role \
+--override-existing-serviceaccounts \
+--approve
+
+# Command to describe the service account
+
+kubectl describe sa external-secrets-sa -n external-secrets
+kubectl describe sa keda-app-sa -n hello-keda-app

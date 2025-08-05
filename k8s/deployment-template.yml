@@ -27,12 +27,12 @@ spec:
           effect: "NoSchedule"
       containers:
         - name: hello-keda-app-container
-          image: <YOUR_AWS_ACCOUNT_ID>.dkr.ecr.<YOUR_AWS_REGION>.amazonaws.com/hello-keda-app:latest # Will be replaced by script
+          image: 261358761679.dkr.ecr.us-east-1.amazonaws.com/hello-keda-app:latest # Will be replaced by script
           ports:
             - containerPort: 80
           env:
             - name: GCP_PROJECT_ID
-              value: "your-gcp-project-id" # <--- REPLACE WITH YOUR GCP PROJECT ID
+              value: "keda-pubsub-eks-integration" # <--- REPLACE WITH YOUR GCP PROJECT ID
             - name: PUBSUB_SUBSCRIPTION_ID # <--- THIS IS THE KEY for topic identification
               value: "{{PUBSUB_SUBSCRIPTION_ID_VALUE}}" # Placeholder, replaced by script
             - name: GOOGLE_APPLICATION_CREDENTIALS

@@ -3,7 +3,7 @@ set -eo pipefail
 
 # --- Configuration Variables ---
 export EKS_CLUSTER_NAME="hello-keda-cluster"
-export AWS_REGION="us-east-2" # <--- REPLACE WITH YOUR AWS_REGION
+export AWS_REGION="us-east-1" # <--- REPLACE WITH YOUR AWS_REGION
 export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
 export ECR_REPO_NAME="hello-keda-app"
@@ -20,11 +20,19 @@ export GCP_PROJECT_ID="your-gcp-project-id"
 # --- Define Your Topics and Subscriptions ---
 # Key: TOPIC_IDENTIFIER (used in K8s resource names/labels)
 # Value: PUBSUB_SUBSCRIPTION_ID (actual GCP Pub/Sub Subscription ID)
-declare -A TOPIC_CONFIGS=(
-  ["alpha"]="my-pubsub-subscription-alpha"
-  ["beta"]="my-pubsub-subscription-beta"
-  ["gamma"]="my-pubsub-subscription-gamma"
-)
+# declare -A TOPIC_CONFIGS=(
+#   ["alpha"]="my-pubsub-subscription-alpha"
+#   ["beta"]="my-pubsub-subscription-beta"
+#   ["gamma"]="my-pubsub-subscription-gamma"
+# )
+
+# declare -A TOPIC_CONFIGS
+# TOPIC_CONFIGS["alpha"]="my-pubsub-subscription-alpha"
+# TOPIC_CONFIGS["beta"]="my-pubsub-subscription-beta"
+# TOPIC_CONFIGS["gamma"]="my-pubsub-subscription-gamma"
+
+TOPIC_IDS=("alpha" "beta" "gamma")
+PUBSUB_SUBSCRIPTION_IDS=("my-pubsub-subscription-alpha" "my-pubsub-subscription-beta" "my-pubsub-subscription-gamma")
 
 # K8s Manifests paths (Templates)
 export APP_DEPLOYMENT_TEMPLATE="k8s/deployment-template.yml"
@@ -39,7 +47,9 @@ export APP_NAMESPACE_FILE="k8s/namespace.yml"
 
 # Versions for operators
 export KEDA_VERSION="2.17.2" # Verify current stable KEDA version!
-export EXTERNAL_SECRETS_HELM_CHART_VERSION="0.10.2" # Verify current stable External Secrets Helm chart version!
+#export EXTERNAL_SECRETS_HELM_CHART_VERSION="0.10.2" # Verify current stable External Secrets Helm chart version!
+export EXTERNAL_SECRETS_HELM_CHART_VERSION="0.19.0" # Verify current stable External Secrets Helm chart version!
+
 
 # --- Helper Function for Error Handling ---
 handle_error() {
@@ -112,10 +122,9 @@ kubectl create namespace "${EXTERNAL_SECRETS_NAMESPACE}" --dry-run=client -o yam
 helm repo add external-secrets https://charts.external-secrets.io || handle_error "Failed to add external-secrets helm repo"
 helm repo update || handle_error "Failed to update helm repos"
 
-# Mirror External Secrets images to ECR (if not already done)
-echo "Mirroring External Secrets images to ECR (if needed)..."
-EXTERNAL_SECRETS_CONTROLLER_IMAGE="oci.external-secrets.io/external-secrets/external-secrets:v${EXTERNAL_SECRETS_HELM_CHART_VERSION}"
-EXTERNAL_SECRETS_WEBHOOK_IMAGE="oci.external-secrets.io/external-secrets/external-secrets-webhook:v${EXTERNAL_SECRETS_HELM_CHART_VERSION}"
+
+EXTERNAL_SECRETS_CONTROLLER_IMAGE="ghcr.io/external-secrets/external-secrets:v${EXTERNAL_SECRETS_HELM_CHART_VERSION}"
+EXTERNAL_SECRETS_WEBHOOK_IMAGE="ghcr.io/external-secrets/external-secrets-webhook:v${EXTERNAL_SECRETS_HELM_CHART_VERSION}"
 
 # Check if ECR repo for external-secrets exists, create if not
 aws ecr describe-repositories --repository-names external-secrets/external-secrets --region "${AWS_REGION}" &>/dev/null || \
@@ -123,24 +132,12 @@ aws ecr describe-repositories --repository-names external-secrets/external-secre
 aws ecr describe-repositories --repository-names external-secrets/external-secrets-webhook --region "${AWS_REGION}" &>/dev/null || \
   aws ecr create-repository --repository-name external-secrets/external-secrets-webhook --region "${AWS_REGION}" || handle_error "Failed to create ECR repo for external-secrets-webhook"
 
-docker pull "${EXTERNAL_SECRETS_CONTROLLER_IMAGE}" || handle_error "Failed to pull ES controller image"
-docker tag "${EXTERNAL_SECRETS_CONTROLLER_IMAGE}" "${AWS_ACCOUNT_ID}".dkr.ecr."${AWS_REGION}".amazonaws.com/external-secrets/external-secrets:"v${EXTERNAL_SECRETS_HELM_CHART_VERSION}" || handle_error "Failed to tag ES controller image"
-docker push "${AWS_ACCOUNT_ID}".dkr.ecr."${AWS_REGION}".amazonaws.com/external-secrets/external-secrets:"v${EXTERNAL_SECRETS_HELM_CHART_VERSION}" || handle_error "Failed to push ES controller image"
-
-docker pull "${EXTERNAL_SECRETS_WEBHOOK_IMAGE}" || handle_error "Failed to pull ES webhook image"
-docker tag "${EXTERNAL_SECRETS_WEBHOOK_IMAGE}" "${AWS_ACCOUNT_ID}".dkr.ecr."${AWS_REGION}".amazonaws.com/external-secrets/external-secrets-webhook:"v${EXTERNAL_SECRETS_HELM_CHART_VERSION}" || handle_error "Failed to tag ES webhook image"
-docker push "${AWS_ACCOUNT_ID}".dkr.ecr."${AWS_REGION}".amazonaws.com/external-secrets/external-secrets-webhook:"v${EXTERNAL_SECRETS_HELM_CHART_VERSION}" || handle_error "Failed to push ES webhook image"
-echo "External Secrets images mirrored to ECR."
-
-
 # Deploy External Secrets from your private ECR mirror
 helm upgrade --install external-secrets external-secrets/external-secrets \
     --namespace "${EXTERNAL_SECRETS_NAMESPACE}" \
     --create-namespace \
     --set installCRDs=true \
-    --set image.repository="${AWS_ACCOUNT_ID}".dkr.ecr."${AWS_REGION}".amazonaws.com/external-secrets/external-secrets \
     --set image.tag="v${EXTERNAL_SECRETS_HELM_CHART_VERSION}" \
-    --set webhook.image.repository="${AWS_ACCOUNT_ID}".dkr.ecr."${AWS_REGION}".amazonaws.com/external-secrets/external-secrets-webhook \
     --set webhook.image.tag="v${EXTERNAL_SECRETS_HELM_CHART_VERSION}" \
     --set controller.tolerations[0].key="eks.amazonaws.com/compute-type" \
     --set controller.tolerations[0].operator="Equal" \
@@ -152,6 +149,10 @@ helm upgrade --install external-secrets external-secrets/external-secrets \
     --set webhook.tolerations[0].effect="NoSchedule" \
     --wait || handle_error "Failed to install External Secrets operator"
 echo "External Secrets Operator deployed."
+
+# ADD THIS LINE HERE
+echo "Waiting for External Secrets CRDs to be ready..."
+sleep 30
 
 # --- 5. Create Application Namespace ---
 echo "--- Creating Application Namespace ---"
@@ -165,10 +166,34 @@ echo "--- Deploying IAM Role Service Accounts (verify IRSA linking in README) --
 kubectl apply -f "${IAM_ROLE_SA_FILE}" || handle_error "Failed to apply IAM Role Service Accounts"
 echo "IAM Role Service Accounts deployed. Ensure they are correctly linked to AWS IAM Roles via eksctl."
 
+# Check for and wait for the CRDs to be available. This is a robust alternative to a 'sleep' command.
+echo "Waiting for External Secrets CRDs to be registered by the API server..."
+for i in {1..120}; do
+    if kubectl get crd secretstores.external-secrets.io &>/dev/null; then
+        echo "External Secrets CRDs are ready."
+        break
+    fi
+    echo -n "."
+    sleep 1
+    if [[ $i -eq 120 ]]; then
+        echo -e "\nERROR: Timeout waiting for External Secrets CRDs to be ready."
+        exit 1
+    fi
+done
+
 # --- 7. Deploy External Secret Store and External Secret ---
 echo "--- Deploying External Secret Store and External Secret ---"
-kubectl apply -f "${EXTERNAL_SECRET_CONFIG_FILE}" || handle_error "Failed to apply External Secret configuration"
+
+echo "Waiting for External Secrets CRD API to be established..."
+# Use kubectl wait to block until the CRD's API endpoint is ready to be used.
+kubectl wait --for=condition=Established crd/secretstores.external-secrets.io --timeout=120s || handle_error "Timeout waiting for SecretStore CRD to be ready"
+
+echo "External Secrets CRD API is now ready."
+
+# Force the apply command to skip client-side validation
+kubectl apply -f "${EXTERNAL_SECRET_CONFIG_FILE}" --validate=false || handle_error "Failed to apply External Secret configuration"
 echo "External Secret Store and External Secret deployed. Waiting for K8s Secret to be synced..."
+
 # Give External Secrets time to sync the secret. You can monitor with `kubectl get externalsecret -n hello-keda-app`
 sleep 30
 kubectl get secret gcp-pubsub-credentials-k8s -n "${APP_NAMESPACE}" || echo "Warning: Secret 'gcp-pubsub-credentials-k8s' not yet synced. Monitor 'kubectl get externalsecret -n ${APP_NAMESPACE}'"
@@ -180,10 +205,18 @@ echo "KEDA TriggerAuthentication deployed."
 
 
 # --- 9. Deploy Application Resources for Each Topic ---
-echo "--- Deploying Hello World Pub/Sub Applications for each topic ---"
-for TOPIC_ID in "${!TOPIC_CONFIGS[@]}"; do
-  SUBSCRIPTION_ID="${TOPIC_CONFIGS[$TOPIC_ID]}"
+# echo "--- Deploying Hello World Pub/Sub Applications for each topic ---"
+# for TOPIC_ID in "${!TOPIC_CONFIGS[@]}"; do
+#   SUBSCRIPTION_ID="${TOPIC_CONFIGS[$TOPIC_ID]}"
+#   echo "Processing topic: ${TOPIC_ID} with subscription: ${SUBSCRIPTION_ID}"
+
+for i in "${!TOPIC_IDS[@]}"; do
+  TOPIC_ID="${TOPIC_IDS[i]}"
+  SUBSCRIPTION_ID="${PUBSUB_SUBSCRIPTION_IDS[i]}"
   echo "Processing topic: ${TOPIC_ID} with subscription: ${SUBSCRIPTION_ID}"
+
+  # ... rest of the loop content
+done
 
   # Generate and apply Deployment for current topic
   TEMP_DEPLOYMENT_FILE=$(mktemp)
