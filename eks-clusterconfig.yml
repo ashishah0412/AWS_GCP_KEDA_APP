@@ -5,7 +5,7 @@ kind: ClusterConfig
 metadata:
   name: hello-keda-cluster
   region: us-east-1 # <--- REPLACE WITH YOUR AWS_REGION
-  version: "1.29" # Specify your desired Kubernetes version
+  version: "1.33" # Specify your desired Kubernetes version
 
 fargateProfiles:
   - name: app-fargate-profile # All app pods (from different topics) will use this

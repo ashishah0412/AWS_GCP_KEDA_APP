@@ -58,6 +58,7 @@ handle_error() {
 }
 
 # --- 0. Pre-requisite Check & Placeholders ---
+echo "--- 0. Pre-requisite Check & Placeholders ---"
 echo "--- IMPORTANT: Ensure you have replaced ALL placeholders in the .yml files and in this script! ---"
 echo "--- GCP_PROJECT_ID in this script and .yml files must be correct. ---"
 echo "--- AWS_REGION in this script and .yml files must be correct. ---"
@@ -66,11 +67,13 @@ echo "--- AWS Account ID will be fetched automatically. ---"
 sleep 5 # Give user time to read
 
 # --- 1. AWS CLI & Kubectl Configuration ---
+echo "--- 1. AWS CLI & Kubectl Configuration ---"
 echo "--- Configuring AWS CLI and Kubectl ---"
 aws eks update-kubeconfig --region "${AWS_REGION}" --name "${EKS_CLUSTER_NAME}" || handle_error "Failed to update kubeconfig. Ensure EKS cluster exists and you have permissions."
 echo "AWS CLI and Kubectl configured."
 
 # --- 2. Build and Push Docker Image ---
+echo "--- 2. Building and Pushing Docker Image to ECR ---"
 echo "--- Building and pushing Docker image ---"
 docker build -t "${ECR_REPO_NAME}" . || handle_error "Docker build failed"
 aws ecr get-login-password --region "${AWS_REGION}" | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}".dkr.ecr."${AWS_REGION}".amazonaws.com || handle_error "ECR login failed"
@@ -84,6 +87,7 @@ docker push "${AWS_ACCOUNT_ID}".dkr.ecr."${AWS_REGION}".amazonaws.com/"${ECR_REP
 echo "Application Docker image pushed to ECR."
 
 # --- 3. Deploy KEDA Core Components ---
+echo "--- 3. Deploying KEDA Core Components ---"
 echo "--- Deploying KEDA Core Components ---"
 KEDA_CRDS_URL="https://github.com/kedacore/keda/releases/download/v${KEDA_VERSION}/keda-${KEDA_VERSION}-crds.yaml"
 KEDA_CORE_URL="https://github.com/kedacore/keda/releases/download/v${KEDA_VERSION}/keda-${KEDA_VERSION}-core.yaml"
@@ -115,8 +119,8 @@ kubectl wait --for=condition=Available deployment/keda-metrics-apiserver -n "${K
 echo "KEDA operators are ready."
 
 # --- 4. Deploy External Secrets Operator ---
-echo "--- Deploying External Secrets Operator ---"
 
+echo "--- Deploying External Secrets Operator ---"
 kubectl create namespace "${EXTERNAL_SECRETS_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - || handle_error "Failed to create External Secrets namespace"
 
 helm repo add external-secrets https://charts.external-secrets.io || handle_error "Failed to add external-secrets helm repo"
@@ -147,6 +151,9 @@ helm upgrade --install external-secrets external-secrets/external-secrets \
     --set webhook.tolerations[0].operator="Equal" \
     --set webhook.tolerations[0].value="fargate" \
     --set webhook.tolerations[0].effect="NoSchedule" \
+    --set webhook.certManager.enabled=false \
+    --set webhook.recreate=true \
+    --set webhook.generateSelfSignedCert=true \
     --wait || handle_error "Failed to install External Secrets operator"
 echo "External Secrets Operator deployed."
 
@@ -155,11 +162,13 @@ echo "Waiting for External Secrets CRDs to be ready..."
 sleep 30
 
 # --- 5. Create Application Namespace ---
+echo "--- 5. Creating Application Namespace ---"
 echo "--- Creating Application Namespace ---"
 kubectl create namespace "${APP_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - || handle_error "Failed to create application namespace"
 echo "Application namespace created."
 
 # --- 6. Deploy IAM Role for Service Accounts (IRSA) ---
+echo "--- 6. Deploying IAM Role Service Accounts (IRSA) ---"
 # IMPORTANT: Ensure you have already run `eksctl create iamserviceaccount` for these SAs
 # as described in the README, linking them to their respective IAM roles.
 echo "--- Deploying IAM Role Service Accounts (verify IRSA linking in README) ---"
@@ -182,29 +191,38 @@ for i in {1..120}; do
 done
 
 # --- 7. Deploy External Secret Store and External Secret ---
+echo "--- 7. Deploying External Secret Store and External Secret ---"
 echo "--- Deploying External Secret Store and External Secret ---"
 
-echo "Waiting for External Secrets CRD API to be established..."
-# Use kubectl wait to block until the CRD's API endpoint is ready to be used.
-kubectl wait --for=condition=Established crd/secretstores.external-secrets.io --timeout=120s || handle_error "Timeout waiting for SecretStore CRD to be ready"
+echo "Waiting for ALL External Secrets CRDs to be established..."
+for crd in secretstores externalsecrets clustersecretstores clusterexternalsecrets; do
+  kubectl wait --for=condition=Established crd/${crd}.external-secrets.io --timeout=300s || \
+    handle_error "Timeout waiting for ${crd} CRD to be ready"
+done
 
-echo "External Secrets CRD API is now ready."
+echo "All External Secrets CRDs are now ready."
 
-# Force the apply command to skip client-side validation
-kubectl apply -f "${EXTERNAL_SECRET_CONFIG_FILE}" --validate=false || handle_error "Failed to apply External Secret configuration"
-echo "External Secret Store and External Secret deployed. Waiting for K8s Secret to be synced..."
+# Add additional check for operator pods to be ready
+echo "Waiting for External Secrets Operator pods to be ready..."
+kubectl wait --for=condition=Ready pod -n "${EXTERNAL_SECRETS_NAMESPACE}" -l app.kubernetes.io/name=external-secrets --timeout=300s || \
+  handle_error "External Secrets Operator pods not ready"
 
-# Give External Secrets time to sync the secret. You can monitor with `kubectl get externalsecret -n hello-keda-app`
-sleep 30
-kubectl get secret gcp-pubsub-credentials-k8s -n "${APP_NAMESPACE}" || echo "Warning: Secret 'gcp-pubsub-credentials-k8s' not yet synced. Monitor 'kubectl get externalsecret -n ${APP_NAMESPACE}'"
+# Additional delay for API to stabilize
+sleep 20
+
+# Apply with server-side apply for better reliability
+kubectl apply --server-side -f "${EXTERNAL_SECRET_CONFIG_FILE}" || \
+  handle_error "Failed to apply External Secret configuration"
 
 # --- 8. Deploy KEDA TriggerAuthentication (shared) ---
+echo "--- 8. Deploying KEDA TriggerAuthentication (shared) ---"
 echo "--- Deploying KEDA TriggerAuthentication (shared) ---"
 kubectl apply -f "${KEDA_TRIGGER_AUTH_FILE}" || handle_error "Failed to deploy KEDA TriggerAuthentication"
 echo "KEDA TriggerAuthentication deployed."
 
 
 # --- 9. Deploy Application Resources for Each Topic ---
+echo "--- 9. Deploying Application Resources for Each Topic ---"
 # echo "--- Deploying Hello World Pub/Sub Applications for each topic ---"
 # for TOPIC_ID in "${!TOPIC_CONFIGS[@]}"; do
 #   SUBSCRIPTION_ID="${TOPIC_CONFIGS[$TOPIC_ID]}"
@@ -250,6 +268,7 @@ done
 done
 
 # --- 10. Final Verification ---
+echo "--- 10. Final Verification ---"
 echo "--- Deployment Complete. Checking Resources ---"
 echo "Pods in ${APP_NAMESPACE}:"
 kubectl get pods -n "${APP_NAMESPACE}" -l app=hello-keda-app

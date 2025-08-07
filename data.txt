@@ -2,6 +2,8 @@
 EKS-KedaApp-SecretsReader-Role: arn:aws:iam::261358761679:role/EKS-KedaApp-SecretsReader-Role
 EKS-ExternalSecrets-Reader-Role: arn:aws:iam::261358761679:role/EKS-ExternalSecrets-Reader-Role
 
+# Create Cluster
+eksctl create cluster -f eks-clusterconfig.yml
 
 # Create Namespace
 kubectl create namespace hello-keda-app
@@ -45,3 +47,30 @@ eksctl create iamserviceaccount \
 
 kubectl describe sa external-secrets-sa -n external-secrets
 kubectl describe sa keda-app-sa -n hello-keda-app
+eksctl get iamserviceaccount --cluster hello-keda-cluster
+
+
+
+kubectl delete sa keda-app-sa -n hello-keda-app
+kubectl delete sa external-secrets-sa -n external-secrets
+
+
+eksctl get iamserviceaccount --cluster hello-keda-cluster
+
+
+eksctl create iamserviceaccount \
+--name keda-app-sa \
+--namespace hello-keda-app \
+--cluster hello-keda-cluster \
+--attach-role-arn arn:aws:iam::261358761679:role/EKS-KedaApp-SecretsReader-Role \
+--approve \
+--override-existing-serviceaccounts \
+--verbose 4
+
+
+eksctl create iamserviceaccount \
+    --name keda-app-sa \
+    --namespace hello-keda-app \
+    --cluster hello-keda-cluster \
+    --attach-policy-arn arn:aws:iam::261358761679:role/EKS-KedaApp-SecretsReader-Role \
+    --approve
