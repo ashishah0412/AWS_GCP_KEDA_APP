@@ -74,3 +74,6 @@ eksctl create iamserviceaccount \
     --cluster hello-keda-cluster \
     --attach-policy-arn arn:aws:iam::261358761679:role/EKS-KedaApp-SecretsReader-Role \
     --approve
+
+
+  eksctl delete cluster -f eks-clusterconfig.yml

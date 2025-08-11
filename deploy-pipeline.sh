@@ -169,11 +169,29 @@ echo "Application namespace created."
 
 # --- 6. Deploy IAM Role for Service Accounts (IRSA) ---
 echo "--- 6. Deploying IAM Role Service Accounts (IRSA) ---"
+
+# For the External Secrets operator
+eksctl create iamserviceaccount \
+--name external-secrets-sa \
+--namespace external-secrets \
+--cluster hello-keda-cluster \
+--attach-policy-arn arn:aws:iam::aws:policy/SecretsManagerReadWrite \
+--approve
+
+# For your KEDA application
+eksctl create iamserviceaccount \
+--name keda-app-sa \
+--namespace hello-keda-app \
+--cluster hello-keda-cluster \
+--attach-policy-arn arn:aws:iam::aws:policy/SecretsManagerReadWrite \
+--approve
+
+
 # IMPORTANT: Ensure you have already run `eksctl create iamserviceaccount` for these SAs
 # as described in the README, linking them to their respective IAM roles.
-echo "--- Deploying IAM Role Service Accounts (verify IRSA linking in README) ---"
-kubectl apply -f "${IAM_ROLE_SA_FILE}" || handle_error "Failed to apply IAM Role Service Accounts"
-echo "IAM Role Service Accounts deployed. Ensure they are correctly linked to AWS IAM Roles via eksctl."
+# echo "--- Deploying IAM Role Service Accounts (verify IRSA linking in README) ---"
+# kubectl apply -f "${IAM_ROLE_SA_FILE}" || handle_error "Failed to apply IAM Role Service Accounts"
+# echo "IAM Role Service Accounts deployed. Ensure they are correctly linked to AWS IAM Roles via eksctl."
 
 # Check for and wait for the CRDs to be available. This is a robust alternative to a 'sleep' command.
 echo "Waiting for External Secrets CRDs to be registered by the API server..."
