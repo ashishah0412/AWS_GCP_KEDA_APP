@@ -77,3 +77,7 @@ eksctl create iamserviceaccount \
 
 
   eksctl delete cluster -f eks-clusterconfig.yml
+
+
+  kubectl logs -n external-secrets -l app.kubernetes.io/name=external-secrets-cert-controller
+

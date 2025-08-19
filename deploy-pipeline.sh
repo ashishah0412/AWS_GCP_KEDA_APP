@@ -15,7 +15,7 @@ export EXTERNAL_SECRETS_NAMESPACE="external-secrets"
 
 # --- GCP Configuration ---
 # <--- REPLACE WITH YOUR ACTUAL GCP PROJECT ID
-export GCP_PROJECT_ID="your-gcp-project-id"
+export GCP_PROJECT_ID="keda-pubsub-eks-integration"
 
 # --- Define Your Topics and Subscriptions ---
 # Key: TOPIC_IDENTIFIER (used in K8s resource names/labels)
@@ -48,7 +48,7 @@ export APP_NAMESPACE_FILE="k8s/namespace.yml"
 # Versions for operators
 export KEDA_VERSION="2.17.2" # Verify current stable KEDA version!
 #export EXTERNAL_SECRETS_HELM_CHART_VERSION="0.10.2" # Verify current stable External Secrets Helm chart version!
-export EXTERNAL_SECRETS_HELM_CHART_VERSION="0.19.0" # Verify current stable External Secrets Helm chart version!
+export EXTERNAL_SECRETS_HELM_CHART_VERSION="0.19.1" # Verify current stable External Secrets Helm chart version!
 
 
 # --- Helper Function for Error Handling ---
@@ -120,46 +120,92 @@ echo "KEDA operators are ready."
 
 # --- 4. Deploy External Secrets Operator ---
 
-echo "--- Deploying External Secrets Operator ---"
-kubectl create namespace "${EXTERNAL_SECRETS_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - || handle_error "Failed to create External Secrets namespace"
+echo "4. 🔒 Deploying External Secrets Operator..."
+kubectl create namespace "${EXTERNAL_SECRETS_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
 
+# Add and update Helm repo
 helm repo add external-secrets https://charts.external-secrets.io || handle_error "Failed to add external-secrets helm repo"
-helm repo update || handle_error "Failed to update helm repos"
+# helm repo update
+
+helm upgrade --install external-secrets \
+   external-secrets/external-secrets \
+   -n external-secrets \
+   --create-namespace \
+   --set installCRDs=true \
+   --set webhook.port=9443
+
+# Aggressive cleanup of any lingering state before installation
+# echo "Cleaning up any previous webhook configurations..."
+# kubectl delete -n "${EXTERNAL_SECRETS_NAMESPACE}" service external-secrets-webhook --ignore-not-found=true
 
 
-EXTERNAL_SECRETS_CONTROLLER_IMAGE="ghcr.io/external-secrets/external-secrets:v${EXTERNAL_SECRETS_HELM_CHART_VERSION}"
-EXTERNAL_SECRETS_WEBHOOK_IMAGE="ghcr.io/external-secrets/external-secrets-webhook:v${EXTERNAL_SECRETS_HELM_CHART_VERSION}"
+# Install External Secrets with webhook ENABLED, certController ENABLED, and Fargate tolerations
+# helm upgrade --install external-secrets external-secrets/external-secrets \
+#     --namespace "${EXTERNAL_SECRETS_NAMESPACE}" \
+#     --create-namespace \
+#     --set installCRDs=true \
+#     --set image.tag="v${EXTERNAL_SECRETS_HELM_CHART_VERSION}" \
+#     --set controller.tolerations[0].key="eks.amazonaws.com/compute-type" \
+#     --set controller.tolerations[0].operator="Equal" \
+#     --set controller.tolerations[0].value="fargate" \
+#     --set controller.tolerations[0].effect="NoSchedule" \
+#     --set webhook.enabled=true \
+#     --set webhook.tolerations[0].key="eks.amazonaws.com/compute-type" \
+#     --set webhook.tolerations[0].operator="Equal" \
+#     --set webhook.tolerations[0].value="fargate" \
+#     --set webhook.tolerations[0].effect="NoSchedule" \
+#     --set certController.enabled=true \
+#     --set certController.tolerations[0].key="eks.amazonaws.com/compute-type" \
+#     --set certController.tolerations[0].operator="Equal" \
+#     --set certController.tolerations[0].value="fargate" \
+#     --set certController.tolerations[0].effect="NoSchedule" \
+#     --set certController.dnsNames[0]="external-secrets-webhook.external-secrets.svc" \
+#     --set certController.dnsNames[1]="external-secrets-webhook.external-secrets.svc.cluster.local" \
+#     --wait
 
-# Check if ECR repo for external-secrets exists, create if not
-aws ecr describe-repositories --repository-names external-secrets/external-secrets --region "${AWS_REGION}" &>/dev/null || \
-  aws ecr create-repository --repository-name external-secrets/external-secrets --region "${AWS_REGION}" || handle_error "Failed to create ECR repo for external-secrets"
-aws ecr describe-repositories --repository-names external-secrets/external-secrets-webhook --region "${AWS_REGION}" &>/dev/null || \
-  aws ecr create-repository --repository-name external-secrets/external-secrets-webhook --region "${AWS_REGION}" || handle_error "Failed to create ECR repo for external-secrets-webhook"
+# First, clean up any existing webhook configurations
+# echo "Cleaning up webhook configurations..."
+# kubectl delete validatingwebhookconfiguration external-secrets-webhook --ignore-not-found=true
+# kubectl delete mutatingwebhookconfiguration external-secrets-webhook --ignore-not-found=true
 
-# Deploy External Secrets from your private ECR mirror
-helm upgrade --install external-secrets external-secrets/external-secrets \
-    --namespace "${EXTERNAL_SECRETS_NAMESPACE}" \
-    --create-namespace \
-    --set installCRDs=true \
-    --set image.tag="v${EXTERNAL_SECRETS_HELM_CHART_VERSION}" \
-    --set webhook.image.tag="v${EXTERNAL_SECRETS_HELM_CHART_VERSION}" \
-    --set controller.tolerations[0].key="eks.amazonaws.com/compute-type" \
-    --set controller.tolerations[0].operator="Equal" \
-    --set controller.tolerations[0].value="fargate" \
-    --set controller.tolerations[0].effect="NoSchedule" \
-    --set webhook.tolerations[0].key="eks.amazonaws.com/compute-type" \
-    --set webhook.tolerations[0].operator="Equal" \
-    --set webhook.tolerations[0].value="fargate" \
-    --set webhook.tolerations[0].effect="NoSchedule" \
-    --set webhook.certManager.enabled=false \
-    --set webhook.recreate=true \
-    --set webhook.generateSelfSignedCert=true \
-    --wait || handle_error "Failed to install External Secrets operator"
-echo "External Secrets Operator deployed."
+# Replace the External Secrets installation section with:
+# helm upgrade --install external-secrets external-secrets/external-secrets \
+#     --namespace "${EXTERNAL_SECRETS_NAMESPACE}" \
+#     --create-namespace \
+#     --set installCRDs=false \
+#     --set webhook.create=false \
+#     --set webhook.enabled=false \
+#     --set webhook.servicePort=0 \
+#     --set certController.create=false \
+#     --set certController.enabled=false \
+#     --set 'controller.tolerations[0].key=eks.amazonaws.com/compute-type' \
+#     --set 'controller.tolerations[0].operator=Equal' \
+#     --set 'controller.tolerations[0].value=fargate' \
+#     --set 'controller.tolerations[0].effect=NoSchedule' \
+#     --wait
 
-# ADD THIS LINE HERE
-echo "Waiting for External Secrets CRDs to be ready..."
-sleep 30
+# Download CRDs and remove webhook configurations
+# echo "Installing modified CRDs..."
+# for crd in secretstores externalsecrets; do
+#     echo "Processing ${crd} CRD..."
+#     curl -sL "https://raw.githubusercontent.com/external-secrets/external-secrets/v${EXTERNAL_SECRETS_HELM_CHART_VERSION}/config/crds/bases/external-secrets.io_${crd}.yaml" | \
+#     yq e 'del(.spec.conversion.webhook)' - | \
+#     yq e 'del(.spec.versions[].schema.openAPIV3Schema.properties.spec.properties.provider.properties.webhook)' - | \
+#     yq e 'del(.metadata.annotations."cert-manager.io/inject-ca-from")' - | \
+#     kubectl replace -f - --force || kubectl create -f -
+# done
+
+# Wait for CRDs
+echo "Waiting for CRDs..."
+for crd in secretstores externalsecrets; do
+    kubectl wait --for=condition=Established --timeout=60s crd/${crd}.external-secrets.io
+done
+
+# Wait for controller
+# echo "Waiting for controller..."
+# kubectl wait --for=condition=Available deployment/external-secrets \
+#     -n "${EXTERNAL_SECRETS_NAMESPACE}" \
+#     --timeout=90s
 
 # --- 5. Create Application Namespace ---
 echo "--- 5. Creating Application Namespace ---"
@@ -170,22 +216,31 @@ echo "Application namespace created."
 # --- 6. Deploy IAM Role for Service Accounts (IRSA) ---
 echo "--- 6. Deploying IAM Role Service Accounts (IRSA) ---"
 
+# Create IAM OIDC provider
+eksctl utils associate-iam-oidc-provider \
+--region "${AWS_REGION}" \
+--cluster hello-keda-cluster \
+--approve
+
 # For the External Secrets operator
 eksctl create iamserviceaccount \
 --name external-secrets-sa \
 --namespace external-secrets \
 --cluster hello-keda-cluster \
+--role-name "external-secrets-role" \
 --attach-policy-arn arn:aws:iam::aws:policy/SecretsManagerReadWrite \
---approve
+--approve \
+--override-existing-serviceaccounts
 
 # For your KEDA application
 eksctl create iamserviceaccount \
 --name keda-app-sa \
 --namespace hello-keda-app \
 --cluster hello-keda-cluster \
+--role-name "keda-app-role" \
 --attach-policy-arn arn:aws:iam::aws:policy/SecretsManagerReadWrite \
---approve
-
+--approve \
+--override-existing-serviceaccounts
 
 # IMPORTANT: Ensure you have already run `eksctl create iamserviceaccount` for these SAs
 # as described in the README, linking them to their respective IAM roles.
@@ -212,25 +267,14 @@ done
 echo "--- 7. Deploying External Secret Store and External Secret ---"
 echo "--- Deploying External Secret Store and External Secret ---"
 
-echo "Waiting for ALL External Secrets CRDs to be established..."
-for crd in secretstores externalsecrets clustersecretstores clusterexternalsecrets; do
-  kubectl wait --for=condition=Established crd/${crd}.external-secrets.io --timeout=300s || \
-    handle_error "Timeout waiting for ${crd} CRD to be ready"
-done
 
-echo "All External Secrets CRDs are now ready."
-
-# Add additional check for operator pods to be ready
-echo "Waiting for External Secrets Operator pods to be ready..."
-kubectl wait --for=condition=Ready pod -n "${EXTERNAL_SECRETS_NAMESPACE}" -l app.kubernetes.io/name=external-secrets --timeout=300s || \
-  handle_error "External Secrets Operator pods not ready"
-
-# Additional delay for API to stabilize
-sleep 20
-
-# Apply with server-side apply for better reliability
-kubectl apply --server-side -f "${EXTERNAL_SECRET_CONFIG_FILE}" || \
-  handle_error "Failed to apply External Secret configuration"
+echo "Applying External Secrets configuration..."
+if ! kubectl apply -f "${EXTERNAL_SECRET_CONFIG_FILE}"; then
+    echo "First attempt failed, retrying after delay..."
+    sleep 10
+    kubectl apply -f "${EXTERNAL_SECRET_CONFIG_FILE}" || \
+        handle_error "Failed to apply External Secret configuration"
+fi
 
 # --- 8. Deploy KEDA TriggerAuthentication (shared) ---
 echo "--- 8. Deploying KEDA TriggerAuthentication (shared) ---"
@@ -251,8 +295,8 @@ for i in "${!TOPIC_IDS[@]}"; do
   SUBSCRIPTION_ID="${PUBSUB_SUBSCRIPTION_IDS[i]}"
   echo "Processing topic: ${TOPIC_ID} with subscription: ${SUBSCRIPTION_ID}"
 
-  # ... rest of the loop content
-done
+#   # ... rest of the loop content
+# done
 
   # Generate and apply Deployment for current topic
   TEMP_DEPLOYMENT_FILE=$(mktemp)
